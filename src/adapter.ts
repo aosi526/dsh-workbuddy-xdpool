@@ -90,12 +90,50 @@ function thinkingLevelMap(info: WorkBuddyModelInfo): Record<string, string | nul
   return map
 }
 
+/** Middle-dot separator: unambiguous between the model's own hyphens and the
+ *  rate/badge suffix. Matches the LaoDing family convention. */
+const DISPLAY_SEPARATOR = ' · '
+
+/** Map an upstream tag code to the localized promo label shown next to the
+ *  credit rate in the model picker. Both `free` and `limited-free` collapse to
+ *  the same short label so the dropdown row stays scannable. */
+const TAG_LABEL: Readonly<Record<string, string>> = {
+  'free': '限时免费',
+  'limited-free': '限时免费',
+  'night-discount': '夜间折扣',
+}
+
+/** Resolve the display suffix (`xN.NN`, promo badges) for one catalog row.
+ *  Returns `undefined` when there's nothing to show — the name is left alone
+ *  so we don't tack a trailing separator on a plain model. */
+function displaySuffix(info: WorkBuddyModelInfo): string | undefined {
+  const parts: string[] = []
+  if (typeof info.multiplier === 'number' && Number.isFinite(info.multiplier)) {
+    parts.push(`x${info.multiplier.toFixed(2)}`)
+  }
+  for (const tag of info.tags ?? []) {
+    const label = TAG_LABEL[tag]
+    if (label !== undefined && !parts.includes(label)) parts.push(label)
+  }
+  return parts.length === 0 ? undefined : parts.join(DISPLAY_SEPARATOR)
+}
+
+/** Apply the catalog's rate + promo badges to one model's display name.
+ *  Display-only: the wire request is built from `model.id`, so renaming here
+ *  cannot affect routing, token, or upstream accounting. DSH 0.1.2's composer
+ *  (`ModelSelect`) renders `model.name` only, which is why the rate and
+ *  badges ride the name rather than a separate description column. */
+function withCatalogDisplay(name: string, info: WorkBuddyModelInfo): string {
+  const suffix = displaySuffix(info)
+  return suffix === undefined ? name : `${name}${DISPLAY_SEPARATOR}${suffix}`
+}
+
 /** Build one pi-ai model descriptor pointing at the loopback shim. */
 function toPiModel(info: WorkBuddyModelInfo, baseUrl: string, providerId: string): Model<Api> {
   const map = thinkingLevelMap(info)
   return {
     id: info.id,
-    name: info.name,
+    name: withCatalogDisplay(info.name, info),
     api: 'openai-completions',
     provider: providerId,
     baseUrl,
